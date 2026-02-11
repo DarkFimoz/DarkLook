@@ -22,29 +22,17 @@ from aiogram.filters import Command
 from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest
 
-import config
+# Конфигурация из переменных окружения
+import os
 
-# Конфигурация (если config.py не найден, используем переменные окружения)
-try:
-    BOT_TOKEN = config.BOT_TOKEN
-    ADMIN_ID = config.ADMIN_ID
-    CHECK_INTERVAL = config.CHECK_INTERVAL
-    DB_NAME = config.DB_NAME
-    MAX_TRACKED_USERS_PER_USER = config.MAX_TRACKED_USERS_PER_USER
-    COMMAND_COOLDOWN = config.COMMAND_COOLDOWN
-    RATE_LIMIT_MESSAGES = config.RATE_LIMIT_MESSAGES
-    RATE_LIMIT_PERIOD = config.RATE_LIMIT_PERIOD
-except (ImportError, AttributeError):
-    # Используем переменные окружения
-    import os
-    BOT_TOKEN = os.getenv('BOT_TOKEN')
-    ADMIN_ID = int(os.getenv('ADMIN_ID', '0'))
-    CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '15'))
-    DB_NAME = os.getenv('DB_NAME', 'darklook.db')
-    MAX_TRACKED_USERS_PER_USER = int(os.getenv('MAX_TRACKED_USERS_PER_USER', '5'))
-    COMMAND_COOLDOWN = int(os.getenv('COMMAND_COOLDOWN', '3'))
-    RATE_LIMIT_MESSAGES = int(os.getenv('RATE_LIMIT_MESSAGES', '10'))
-    RATE_LIMIT_PERIOD = int(os.getenv('RATE_LIMIT_PERIOD', '60'))
+BOT_TOKEN = os.getenv('BOT_TOKEN', 'YOUR_BOT_TOKEN_HERE')
+ADMIN_ID = int(os.getenv('ADMIN_ID', '0'))
+CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '15'))
+DB_NAME = os.getenv('DB_NAME', 'darklook.db')
+MAX_TRACKED_USERS_PER_USER = int(os.getenv('MAX_TRACKED_USERS_PER_USER', '5'))
+COMMAND_COOLDOWN = int(os.getenv('COMMAND_COOLDOWN', '3'))
+RATE_LIMIT_MESSAGES = int(os.getenv('RATE_LIMIT_MESSAGES', '10'))
+RATE_LIMIT_PERIOD = int(os.getenv('RATE_LIMIT_PERIOD', '60'))
 
 # Настройка логирования
 logging.basicConfig(
