@@ -448,6 +448,8 @@ async def cmd_start(message: Message):
 @dp.message(Command("track"))
 async def cmd_track(message: Message):
     """Команда /track"""
+    logger.info(f"Команда /track от пользователя {message.from_user.id}")
+    
     # Логируем пользователя
     await db.add_bot_user(
         message.from_user.id,
@@ -465,56 +467,85 @@ async def cmd_track(message: Message):
     
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("❌ Укажите username: /track @username")
+        await message.answer("❌ Укажите username или ID: /track @username или /track 123456789")
         return
     
-    username = parts[1].lstrip('@')
+    target = parts[1].lstrip('@')
     
     # Проверка лимита
     count = await db.get_tracked_count(message.from_user.id)
     if count >= MAX_TRACKED_USERS_PER_USER:
         await message.answer(
             f"❌ Достигнут лимит: максимум {MAX_TRACKED_USERS_PER_USER} пользователей.\n"
-            f"Удалите кого-то командой /stop @username"
+            f"Удалите кого-то командой /stop ID"
         )
         return
     
-    status_msg = await message.answer(f"🔍 Ищу @{username}...")
+    status_msg = await message.answer(f"🔍 Ищу {target}...")
     
-    # Пытаемся найти пользователя через поиск по username
     try:
-        # Получаем информацию через Bot API
-        # Примечание: Bot API не может получить user_id по username напрямую
-        # Пользователь должен был хотя бы раз взаимодействовать с ботом
-        
-        # Для публичного бота: просим пользователя переслать сообщение
-        await status_msg.edit_text(
-            f"ℹ️ Чтобы отслеживать @{username}, попросите его:\n\n"
-            f"1. Написать любое сообщение этому боту\n"
-            f"2. Или перешлите мне любое сообщение от @{username}\n\n"
-            f"После этого я смогу начать отслеживание!"
-        )
-        
-        await db.log_action(
-            message.from_user.id,
-            "track_attempt",
-            f"@{username}"
-        )
-        
-        # Уведомление админу
+        # Пробуем получить по ID
         try:
-            await bot.send_message(
-                ADMIN_ID,
-                f"🔍 Попытка отслеживания:\n"
-                f"Пользователь: @{message.from_user.username or message.from_user.id}\n"
-                f"Ищет: @{username}"
+            user_id = int(target)
+            user_info = await monitor.get_user_info(user_id)
+        except ValueError:
+            # Если не число, пробуем найти по username через чат
+            try:
+                # Пытаемся получить через @username
+                chat = await bot.get_chat(f"@{target}")
+                user_info = {
+                    'user_id': chat.id,
+                    'username': chat.username or '',
+                    'first_name': chat.first_name or '',
+                    'last_name': chat.last_name or '',
+                }
+            except:
+                user_info = None
+        
+        if not user_info:
+            await status_msg.edit_text(
+                f"❌ Не удалось найти пользователя {target}\n\n"
+                f"Попробуйте:\n"
+                f"• Указать ID вместо username: /track 123456789\n"
+                f"• Переслать мне сообщение от этого пользователя"
             )
-        except:
-            pass
+            return
+        
+        # Добавляем в отслеживание
+        success = await db.add_tracked_user(message.from_user.id, user_info)
+        
+        if success:
+            await status_msg.edit_text(
+                f"✅ <b>Пользователь добавлен!</b>\n\n"
+                f"👤 Username: @{user_info['username']}\n"
+                f"📝 Имя: {user_info['first_name']} {user_info['last_name']}\n"
+                f"🆔 ID: {user_info['user_id']}\n\n"
+                f"Я буду отслеживать изменения каждые 15 секунд!",
+                parse_mode='HTML'
+            )
+            
+            await db.log_action(
+                message.from_user.id,
+                "track_success",
+                f"@{user_info['username']} (ID: {user_info['user_id']})"
+            )
+            
+            # Уведомление админу
+            try:
+                await bot.send_message(
+                    ADMIN_ID,
+                    f"✅ Новое отслеживание:\n"
+                    f"Пользователь: @{message.from_user.username or message.from_user.id}\n"
+                    f"Отслеживает: @{user_info['username']} (ID: {user_info['user_id']})"
+                )
+            except:
+                pass
+        else:
+            await status_msg.edit_text("❌ Ошибка при добавлении")
         
     except Exception as e:
-        await status_msg.edit_text(f"❌ Ошибка: {str(e)}")
         logger.error(f"Ошибка в track: {e}")
+        await status_msg.edit_text(f"❌ Ошибка: {str(e)}")
 
 
 @dp.message(F.forward_from)
