@@ -24,6 +24,28 @@ from aiogram.exceptions import TelegramBadRequest
 
 import config
 
+# Конфигурация (если config.py не найден, используем переменные окружения)
+try:
+    BOT_TOKEN = config.BOT_TOKEN
+    ADMIN_ID = config.ADMIN_ID
+    CHECK_INTERVAL = config.CHECK_INTERVAL
+    DB_NAME = config.DB_NAME
+    MAX_TRACKED_USERS_PER_USER = config.MAX_TRACKED_USERS_PER_USER
+    COMMAND_COOLDOWN = config.COMMAND_COOLDOWN
+    RATE_LIMIT_MESSAGES = config.RATE_LIMIT_MESSAGES
+    RATE_LIMIT_PERIOD = config.RATE_LIMIT_PERIOD
+except (ImportError, AttributeError):
+    # Используем переменные окружения
+    import os
+    BOT_TOKEN = os.getenv('BOT_TOKEN')
+    ADMIN_ID = int(os.getenv('ADMIN_ID', '0'))
+    CHECK_INTERVAL = int(os.getenv('CHECK_INTERVAL', '15'))
+    DB_NAME = os.getenv('DB_NAME', 'darklook.db')
+    MAX_TRACKED_USERS_PER_USER = int(os.getenv('MAX_TRACKED_USERS_PER_USER', '5'))
+    COMMAND_COOLDOWN = int(os.getenv('COMMAND_COOLDOWN', '3'))
+    RATE_LIMIT_MESSAGES = int(os.getenv('RATE_LIMIT_MESSAGES', '10'))
+    RATE_LIMIT_PERIOD = int(os.getenv('RATE_LIMIT_PERIOD', '60'))
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -36,7 +58,7 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 # Инициализация бота
-bot = Bot(token=config.BOT_TOKEN)
+bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
 
 # Rate limiting
@@ -53,7 +75,7 @@ class RateLimiter:
         now = datetime.now()
         if user_id in user_last_command:
             time_passed = (now - user_last_command[user_id]).total_seconds()
-            if time_passed < config.COMMAND_COOLDOWN:
+            if time_passed < COMMAND_COOLDOWN:
                 return False
         user_last_command[user_id] = now
         return True
@@ -65,10 +87,10 @@ class RateLimiter:
         # Очищаем старые записи
         user_message_count[user_id] = [
             msg_time for msg_time in user_message_count[user_id]
-            if (now - msg_time).total_seconds() < config.RATE_LIMIT_PERIOD
+            if (now - msg_time).total_seconds() < RATE_LIMIT_PERIOD
         ]
         
-        if len(user_message_count[user_id]) >= config.RATE_LIMIT_MESSAGES:
+        if len(user_message_count[user_id]) >= RATE_LIMIT_MESSAGES:
             return False
         
         user_message_count[user_id].append(now)
@@ -369,14 +391,14 @@ class UserMonitor:
         while self.monitoring:
             try:
                 await self.check_changes()
-                await asyncio.sleep(config.CHECK_INTERVAL)
+                await asyncio.sleep(CHECK_INTERVAL)
             except Exception as e:
                 logger.error(f"Ошибка в цикле мониторинга: {e}")
-                await asyncio.sleep(config.CHECK_INTERVAL)
+                await asyncio.sleep(CHECK_INTERVAL)
 
 
 # Инициализация
-db = Database(config.DB_NAME)
+db = Database(DB_NAME)
 monitor = UserMonitor(bot, db)
 
 
@@ -428,7 +450,7 @@ async def cmd_start(message: Message):
     # Уведомление админу о новом пользователе
     try:
         await bot.send_message(
-            config.ADMIN_ID,
+            ADMIN_ID,
             f"🆕 Новый пользователь:\n"
             f"ID: {message.from_user.id}\n"
             f"Username: @{message.from_user.username or 'нет'}\n"
@@ -458,9 +480,9 @@ async def cmd_track(message: Message):
     
     # Проверка лимита
     count = await db.get_tracked_count(message.from_user.id)
-    if count >= config.MAX_TRACKED_USERS_PER_USER:
+    if count >= MAX_TRACKED_USERS_PER_USER:
         await message.answer(
-            f"❌ Достигнут лимит: максимум {config.MAX_TRACKED_USERS_PER_USER} пользователей.\n"
+            f"❌ Достигнут лимит: максимум {MAX_TRACKED_USERS_PER_USER} пользователей.\n"
             f"Удалите кого-то командой /stop @username"
         )
         return
@@ -490,7 +512,7 @@ async def cmd_track(message: Message):
         # Уведомление админу
         try:
             await bot.send_message(
-                config.ADMIN_ID,
+                ADMIN_ID,
                 f"🔍 Попытка отслеживания:\n"
                 f"Пользователь: @{message.from_user.username or message.from_user.id}\n"
                 f"Ищет: @{username}"
@@ -515,9 +537,9 @@ async def handle_forward(message: Message):
     
     # Проверка лимита
     count = await db.get_tracked_count(message.from_user.id)
-    if count >= config.MAX_TRACKED_USERS_PER_USER:
+    if count >= MAX_TRACKED_USERS_PER_USER:
         await message.answer(
-            f"❌ Достигнут лимит: максимум {config.MAX_TRACKED_USERS_PER_USER} пользователей"
+            f"❌ Достигнут лимит: максимум {MAX_TRACKED_USERS_PER_USER} пользователей"
         )
         return
     
@@ -549,7 +571,7 @@ async def handle_forward(message: Message):
         # Уведомление админу
         try:
             await bot.send_message(
-                config.ADMIN_ID,
+                ADMIN_ID,
                 f"✅ Новое отслеживание:\n"
                 f"Пользователь: @{message.from_user.username or message.from_user.id}\n"
                 f"Отслеживает: @{user_data['username']} (ID: {user_data['user_id']})"
@@ -576,7 +598,7 @@ async def cmd_list(message: Message):
         )
         return
     
-    text = f"📋 <b>Ваши отслеживаемые ({len(users)}/{config.MAX_TRACKED_USERS_PER_USER}):</b>\n\n"
+    text = f"📋 <b>Ваши отслеживаемые ({len(users)}/{MAX_TRACKED_USERS_PER_USER}):</b>\n\n"
     
     for user in users:
         text += f"👤 @{user['username'] or 'нет username'}\n"
@@ -658,7 +680,7 @@ async def cmd_info(message: Message):
 @dp.message(Command("admin"))
 async def cmd_admin(message: Message):
     """Админ-панель"""
-    if message.from_user.id != config.ADMIN_ID:
+    if message.from_user.id != ADMIN_ID:
         return
     
     admin_text = """
@@ -677,7 +699,7 @@ async def cmd_admin(message: Message):
 @dp.message(Command("stats"))
 async def cmd_stats(message: Message):
     """Статистика бота (только для админа)"""
-    if message.from_user.id != config.ADMIN_ID:
+    if message.from_user.id != ADMIN_ID:
         return
     
     bot_users = await db.get_all_bot_users()
@@ -702,7 +724,7 @@ async def cmd_stats(message: Message):
 @dp.message(Command("users"))
 async def cmd_users(message: Message):
     """Список всех пользователей (только для админа)"""
-    if message.from_user.id != config.ADMIN_ID:
+    if message.from_user.id != ADMIN_ID:
         return
     
     bot_users = await db.get_all_bot_users()
@@ -727,7 +749,7 @@ async def cmd_users(message: Message):
 @dp.message(Command("logs"))
 async def cmd_logs(message: Message):
     """Последние действия (только для админа)"""
-    if message.from_user.id != config.ADMIN_ID:
+    if message.from_user.id != ADMIN_ID:
         return
     
     logs = await db.get_recent_actions(20)
@@ -759,7 +781,7 @@ async def main():
         
         # Уведомление админу
         try:
-            await bot.send_message(config.ADMIN_ID, "🚀 DarkLook запущен!")
+            await bot.send_message(ADMIN_ID, "🚀 DarkLook запущен!")
         except:
             pass
         
