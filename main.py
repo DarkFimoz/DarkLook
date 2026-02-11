@@ -391,21 +391,18 @@ monitor = UserMonitor(bot, db)
 
 
 
-# Middleware для логирования
-@dp.message()
-async def log_user_activity(message: Message):
-    """Логирование активности пользователей"""
+# Обработчики команд
+@dp.message(Command("start"))
+async def cmd_start(message: Message):
+    """Команда /start"""
+    logger.info(f"Команда /start от пользователя {message.from_user.id}")
+    
+    # Логируем пользователя
     await db.add_bot_user(
         message.from_user.id,
         message.from_user.username or '',
         message.from_user.first_name or ''
     )
-
-
-# Обработчики команд
-@dp.message(Command("start"))
-async def cmd_start(message: Message):
-    """Команда /start"""
     if not RateLimiter.check_rate_limit(message.from_user.id):
         await message.answer("⏳ Слишком много запросов. Подождите немного.")
         return
@@ -451,6 +448,13 @@ async def cmd_start(message: Message):
 @dp.message(Command("track"))
 async def cmd_track(message: Message):
     """Команда /track"""
+    # Логируем пользователя
+    await db.add_bot_user(
+        message.from_user.id,
+        message.from_user.username or '',
+        message.from_user.first_name or ''
+    )
+    
     if not RateLimiter.check_cooldown(message.from_user.id):
         await message.answer("⏳ Подождите немного между командами")
         return
@@ -516,6 +520,13 @@ async def cmd_track(message: Message):
 @dp.message(F.forward_from)
 async def handle_forward(message: Message):
     """Обработка пересланных сообщений"""
+    # Логируем пользователя
+    await db.add_bot_user(
+        message.from_user.id,
+        message.from_user.username or '',
+        message.from_user.first_name or ''
+    )
+    
     if not RateLimiter.check_rate_limit(message.from_user.id):
         return
     
@@ -573,6 +584,13 @@ async def handle_forward(message: Message):
 @dp.message(Command("list"))
 async def cmd_list(message: Message):
     """Команда /list"""
+    # Логируем пользователя
+    await db.add_bot_user(
+        message.from_user.id,
+        message.from_user.username or '',
+        message.from_user.first_name or ''
+    )
+    
     if not RateLimiter.check_rate_limit(message.from_user.id):
         await message.answer("⏳ Слишком много запросов")
         return
@@ -760,6 +778,8 @@ async def cmd_logs(message: Message):
 async def main():
     """Главная функция"""
     try:
+        logger.info(f"Запуск бота с ADMIN_ID={ADMIN_ID}, BOT_TOKEN={'установлен' if BOT_TOKEN else 'НЕ установлен'}")
+        
         await db.init_db()
         
         # Запуск мониторинга в фоне
