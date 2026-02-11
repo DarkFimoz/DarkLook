@@ -19,7 +19,7 @@ from collections import defaultdict
 
 from aiogram import Bot, Dispatcher, F
 from aiogram.filters import Command
-from aiogram.types import Message, ChatMemberUpdated
+from aiogram.types import Message
 from aiogram.exceptions import TelegramBadRequest
 
 import config
