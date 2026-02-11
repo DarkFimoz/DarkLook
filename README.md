@@ -18,7 +18,7 @@
 ### 1. Установка
 
 ```bash
-git clone https://github.com/ваш-username/DarkLook.git
+git clone https://github.com/DarkFimoz/DarkLook.git
 cd DarkLook
 pip install -r requirements.txt
 ```
@@ -89,3 +89,17 @@ python main.py
 ## 📄 Лицензия
 
 MIT License
+
+## ⚠️ Правила использования
+
+Если вы кастомизируете этот проект:
+1. Создайте форк репозитория
+2. Укажите в README вашего форка:
+   - Автор оригинала: **DarkFimoz**
+   - Оригинальный репозиторий: `https://github.com/DarkFimoz/DarkLook`
+3. Сохраните эту секцию в вашем README
+
+Пример:
+```markdown
+Основано на [DarkLook](https://github.com/DarkFimoz/DarkLook) by DarkFimoz
+```
