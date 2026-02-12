@@ -34,6 +34,10 @@ COMMAND_COOLDOWN = int(os.getenv('COMMAND_COOLDOWN', '3'))
 RATE_LIMIT_MESSAGES = int(os.getenv('RATE_LIMIT_MESSAGES', '10'))
 RATE_LIMIT_PERIOD = int(os.getenv('RATE_LIMIT_PERIOD', '60'))
 
+# Telethon для поиска по username (опционально)
+TELETHON_API_ID = os.getenv('TELETHON_API_ID', '')
+TELETHON_API_HASH = os.getenv('TELETHON_API_HASH', '')
+
 # Настройка логирования
 logging.basicConfig(
     level=logging.INFO,
@@ -48,6 +52,16 @@ logger = logging.getLogger(__name__)
 # Инициализация бота
 bot = Bot(token=BOT_TOKEN)
 dp = Dispatcher()
+
+# Telethon клиент (опционально)
+telethon_client = None
+if TELETHON_API_ID and TELETHON_API_HASH:
+    try:
+        from telethon import TelegramClient
+        telethon_client = TelegramClient('darklook_session', int(TELETHON_API_ID), TELETHON_API_HASH)
+        logger.info("Telethon клиент инициализирован")
+    except Exception as e:
+        logger.warning(f"Telethon не доступен: {e}")
 
 # Rate limiting
 user_last_command = {}
@@ -313,6 +327,38 @@ class UserMonitor:
             logger.error(f"Ошибка при получении информации: {e}")
             return None
     
+    async def get_user_by_username(self, username: str) -> Optional[Dict]:
+        """Получение информации о пользователе по username"""
+        # Сначала пробуем через Bot API
+        try:
+            chat = await self.bot.get_chat(f"@{username}")
+            return {
+                'user_id': chat.id,
+                'username': chat.username or '',
+                'first_name': chat.first_name or '',
+                'last_name': chat.last_name or '',
+            }
+        except Exception as e:
+            logger.info(f"Bot API не смог найти @{username}: {e}")
+        
+        # Если Bot API не сработал, пробуем через Telethon
+        if telethon_client:
+            try:
+                if not telethon_client.is_connected():
+                    await telethon_client.connect()
+                
+                user = await telethon_client.get_entity(username)
+                return {
+                    'user_id': user.id,
+                    'username': user.username or '',
+                    'first_name': user.first_name or '',
+                    'last_name': user.last_name or '',
+                }
+            except Exception as e:
+                logger.error(f"Telethon не смог найти @{username}: {e}")
+        
+        return None
+    
     async def check_changes(self):
         """Проверка изменений у всех отслеживаемых"""
         users = await self.db.get_tracked_users()
@@ -467,7 +513,13 @@ async def cmd_track(message: Message):
     
     parts = message.text.split()
     if len(parts) < 2:
-        await message.answer("❌ Укажите username или ID: /track @username или /track 123456789")
+        await message.answer(
+            "❌ Укажите username или ID: /track @username или /track 123456789\n\n"
+            "Попробуйте:\n"
+            "• Указать username: /track @username\n"
+            "• Указать ID: /track 123456789\n"
+            "• Переслать мне сообщение от этого пользователя"
+        )
         return
     
     target = parts[1].lstrip('@')
@@ -481,32 +533,44 @@ async def cmd_track(message: Message):
         )
         return
     
-    status_msg = await message.answer(f"🔍 Ищу {target}...")
+    status_msg = await message.answer(f"🔍 Ищу пользователя...")
     
     try:
+        user_info = None
+        
         # Пробуем получить по ID
         try:
             user_id = int(target)
             user_info = await monitor.get_user_info(user_id)
         except ValueError:
-            # Если не число, пробуем найти по username через чат
-            try:
-                # Пытаемся получить через @username
-                chat = await bot.get_chat(f"@{target}")
-                user_info = {
-                    'user_id': chat.id,
-                    'username': chat.username or '',
-                    'first_name': chat.first_name or '',
-                    'last_name': chat.last_name or '',
-                }
-            except:
-                user_info = None
+            # Если не число, пробуем найти по username
+            user_info = await monitor.get_user_by_username(target)
+            
+            if user_info:
+                # Показываем ID пользователя
+                await status_msg.edit_text(
+                    f"✅ <b>Найден пользователь @{target}!</b>\n\n"
+                    f"🆔 ID: <code>{user_info['user_id']}</code>\n"
+                    f"📝 Имя: {user_info['first_name'] or ''} {user_info['last_name'] or ''}\n\n"
+                    f"Чтобы добавить в отслеживание, используйте:\n"
+                    f"/track {user_info['user_id']}",
+                    parse_mode='HTML'
+                )
+                return
+            else:
+                await status_msg.edit_text(
+                    f"❌ Не удалось найти пользователя @{target}\n\n"
+                    f"Попробуйте:\n"
+                    f"• Указать ID вместо username: /track 123456789\n"
+                    f"• Переслать мне сообщение от этого пользователя"
+                )
+                return
         
         if not user_info:
             await status_msg.edit_text(
-                f"❌ Не удалось найти пользователя {target}\n\n"
+                f"❌ Не удалось найти пользователя с ID {target}\n\n"
                 f"Попробуйте:\n"
-                f"• Указать ID вместо username: /track 123456789\n"
+                f"• Указать username: /track @username\n"
                 f"• Переслать мне сообщение от этого пользователя"
             )
             return
@@ -517,9 +581,9 @@ async def cmd_track(message: Message):
         if success:
             await status_msg.edit_text(
                 f"✅ <b>Пользователь добавлен!</b>\n\n"
-                f"👤 Username: @{user_info['username']}\n"
+                f"👤 Username: @{user_info['username'] or 'нет'}\n"
                 f"📝 Имя: {user_info['first_name']} {user_info['last_name']}\n"
-                f"🆔 ID: {user_info['user_id']}\n\n"
+                f"🆔 ID: <code>{user_info['user_id']}</code>\n\n"
                 f"Я буду отслеживать изменения каждые 15 секунд!",
                 parse_mode='HTML'
             )
@@ -548,7 +612,7 @@ async def cmd_track(message: Message):
         await status_msg.edit_text(f"❌ Ошибка: {str(e)}")
 
 
-@dp.message(F.forward_from)
+@dp.message(F.forward_from | F.forward_sender_name)
 async def handle_forward(message: Message):
     """Обработка пересланных сообщений"""
     # Логируем пользователя
@@ -561,8 +625,20 @@ async def handle_forward(message: Message):
     if not RateLimiter.check_rate_limit(message.from_user.id):
         return
     
+    # Проверяем, есть ли информация о пересланном пользователе
     forwarded_user = message.forward_from
+    
     if not forwarded_user:
+        # Если пользователь скрыл пересылку
+        await message.answer(
+            "❌ Не удалось получить информацию о пользователе.\n\n"
+            "Возможные причины:\n"
+            "• Пользователь запретил пересылку сообщений в настройках приватности\n"
+            "• Сообщение переслано из канала\n\n"
+            "Попробуйте:\n"
+            "• Попросить пользователя отключить настройку 'Кто может добавлять ссылку на мой аккаунт при пересылке сообщений'\n"
+            "• Использовать команду /track с ID пользователя"
+        )
         return
     
     # Проверка лимита
@@ -585,7 +661,7 @@ async def handle_forward(message: Message):
     if success:
         await message.answer(
             f"✅ <b>Пользователь добавлен!</b>\n\n"
-            f"👤 Username: @{user_data['username']}\n"
+            f"👤 Username: @{user_data['username'] or 'нет'}\n"
             f"📝 Имя: {user_data['first_name']} {user_data['last_name']}\n"
             f"🆔 ID: {user_data['user_id']}\n\n"
             f"Я буду отслеживать изменения каждые 15 секунд!",
@@ -594,7 +670,7 @@ async def handle_forward(message: Message):
         
         await db.log_action(
             message.from_user.id,
-            "track_success",
+            "track_forward",
             f"@{user_data['username']} (ID: {user_data['user_id']})"
         )
         
@@ -602,7 +678,7 @@ async def handle_forward(message: Message):
         try:
             await bot.send_message(
                 ADMIN_ID,
-                f"✅ Новое отслеживание:\n"
+                f"✅ Новое отслеживание (пересылка):\n"
                 f"Пользователь: @{message.from_user.username or message.from_user.id}\n"
                 f"Отслеживает: @{user_data['username']} (ID: {user_data['user_id']})"
             )
@@ -813,6 +889,14 @@ async def main():
         
         await db.init_db()
         
+        # Запуск Telethon клиента (если настроен)
+        if telethon_client:
+            try:
+                await telethon_client.start()
+                logger.info("Telethon клиент запущен")
+            except Exception as e:
+                logger.warning(f"Не удалось запустить Telethon: {e}")
+        
         # Запуск мониторинга в фоне
         monitoring_task = asyncio.create_task(monitor.start_monitoring())
         
@@ -831,6 +915,8 @@ async def main():
     except Exception as e:
         logger.error(f"Критическая ошибка: {e}")
     finally:
+        if telethon_client:
+            await telethon_client.disconnect()
         await bot.session.close()
 
 
